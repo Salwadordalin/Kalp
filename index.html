@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Kalp ve Nurçin Animasyonu</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #050505; /* Videodaki koyu arka plan */
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // Ekran boyutunu ayarla
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        let particles = [];
+        let angle = 0;
+        let hue = 120; // Yeşilden başlıyor
+
+        // --- KONFİGÜRASYON ---
+        // Kalp ve Yazı için ortak hız ayarı
+        const speedConfig = {
+            drawSpeed: 0.025,  // Kalbin ve yazının çizilme hızı
+            colorSpeed: 0.35,  // Renk dönüşüm hızı
+            particleSaçılma: 12 // Her karede üretilen toz parçacığı
+        };
+
+        // Kalp çizim formülü
+        function heartMath(t) {
+            const x = 16 * Math.pow(Math.sin(t), 3);
+            const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+            return { x, y };
+        }
+
+        // --- NURÇİN YAZISI İÇİN YOL HARİTASI ---
+        // Yazı sanki elle yazılıyormuş gibi, kalbin ortasında belirecek.
+        // x ve y koordinatları kalbin merkezine göredir (scale ile çarpılır).
+        const textPath = [
+            { x: -8, y: -2 }, // N başlangıç
+            { x: -8, y: 3 },
+            { x: -4, y: -2 },
+            { x: -4, y: 3 },  // N bitiş
+            { x: -2, y: 1 },  // u başlangıç
+            { x: -2, y: 3 },
+            { x: 0,  y: 3 },
+            { x: 0,  y: 1 },  // u bitiş
+            { x: 2,  y: 1 },  // r başlangıç
+            { x: 2,  y: 3 },
+            { x: 2,  y: 1.5 },
+            { x: 4,  y: 1 },  // r bitiş
+            { x: 6,  y: 2 },  // ç başlangıç
+            { x: 5,  y: 1 },
+            { x: 7,  y: 1 },
+            { x: 6,  y: 3 },
+            { x: 6,  y: 4 },  // ç kuyruk
+            { x: 9,  y: 1 },  // i başlangıç
+            { x: 9,  y: 3 },
+            { x: 9,  y: 0 },  // i nokta
+            { x: 11, y: 1 },  // n başlangıç
+            { x: 11, y: 3 },
+            { x: 13, y: 1 },
+            { x: 13, y: 3 }   // n bitiş
+        ];
+
+        class Particle {
+            constructor(x, y, h) {
+                this.x = x;
+                this.y = y;
+                this.color = `hsl(${h}, 100%, 65%)`;
+                
+                // Parçacıkların etrafa rastgele saçılması (Videodaki toz bulutu efekti)
+                const a = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 1.5 + 0.1;
+                this.vx = Math.cos(a) * speed;
+                this.vy = Math.sin(a) * speed;
+                
+                this.life = 1; // Başlangıç opaklığı
+                this.decay = Math.random() * 0.015 + 0.01; // Sönme hızı
+                this.size = Math.random() * 2 + 0.5; // Küçük boyutlar
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= this.decay;
+            }
+
+            draw(ctx) {
+                if (this.life <= 0) return;
+                ctx.globalAlpha = this.life;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Elle yazma efekti için çizgi çizme fonksiyonu
+        function drawWritingLine(path, currentTime, scale, h, ctx) {
+            if (path.length < 2) return;
+
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = `hsl(${h}, 100%, 60%)`;
+            ctx.strokeStyle = '#ffffff'; // Elle yazılan çizginin ana rengi
+            ctx.lineWidth = 2.5;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+
+            // Formül zamanına göre ne kadarının çizileceğini hesapla (Elle yazma senkronu)
+            // Kalp bir tam turu 2*PI'de tamamlar. Yazıyı da buna bölelim.
+            const pathProgress = (currentTime % (Math.PI * 2)) / (Math.PI * 2);
+            const endIndex = Math.floor(pathProgress * path.length);
+            
+            if (endIndex < 1) return; // Henüz başlamadı
+
+            // Başlangıç noktasına git
+            const startX = canvas.width / 2 + path[0].x * scale;
+            const startY = canvas.height / 2 + path[0].y * scale;
+            ctx.moveTo(startX, startY);
+
+            for (let i = 1; i < endIndex; i++) {
+                const px = canvas.width / 2 + path[i].x * scale;
+                const py = canvas.height / 2 + path[i].y * scale;
+                ctx.lineTo(px, py);
+
+                // Elle yazılan çizginin arkasında da toz bırak
+                if (Math.random() > 0.7) { // Daha az yoğun toz
+                    particles.push(new Particle(px, py, h));
+                }
+            }
+
+            ctx.stroke();
+            ctx.shadowBlur = 0; // Gölgeyi resetle
+        }
+
+        function animate() {
+            // Önceki kareyi temizle
+            ctx.fillStyle = '#050505';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const scale = Math.min(canvas.width, canvas.height) / 45;
+
+            // --- 1. KALBİ ÇİZ VE TOZ BIRAK ---
+            const pos = heartMath(angle);
+            const hx = canvas.width / 2 + pos.x * scale;
+            const hy = canvas.height / 2 + pos.y * scale;
+
+            // Öncü noktayı (Parlayan ışık) çiz
+            ctx.globalAlpha = 1;
+            ctx.shadowBlur = 25;
+            ctx.shadowColor = `hsl(${hue}, 100%, 60%)`;
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+            // Kalbin arkasında toz üret
+            for (let i = 0; i < speedConfig.particleSaçılma; i++) {
+                particles.push(new Particle(hx, hy, hue));
+            }
+
+            // --- 2. NURÇİN YAZISINI SENKRONİZE ÇİZ ---
+            // Yazı kalbin ortasında, kalbin yazılma hızıyla (angle) aynı hızda elle yazılır.
+            drawWritingLine(textPath, angle, scale * 0.8, hue, ctx); // Yazı biraz daha küçük
+
+
+            // --- 3. TÜM PARÇACIKLARI GÜNCELLE VE ÇİZ ---
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) {
+                    particles.splice(i, 1);
+                } else {
+                    particles[i].draw(ctx);
+                }
+            }
+            
+            ctx.globalAlpha = 1;
+
+            // Ortak zamanlayıcıları ilerlet (Tıpatıp aynı hız)
+            angle += speedConfig.drawSpeed;
+            hue += speedConfig.colorSpeed;
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
